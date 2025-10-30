@@ -1,0 +1,5 @@
+{
+  "name": "URL Shortener",
+  "description": "A simple and elegant URL shortener application. Paste a long URL to generate a short, shareable link instantly. Includes a copy-to-clipboard feature for convenience.",
+  "requestFramePermissions": []
+}
