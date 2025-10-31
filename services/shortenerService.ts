@@ -88,17 +88,20 @@ export const shortenUrl = async (longUrl: string): Promise<string> => {
   // Generate a unique short code, retrying if a collision occurs
   while (!isCodeUnique && attempts < maxAttempts) {
     shortCode = generateShortCode();
+    // Use maybeSingle() so that 'no rows' is not treated as an error by the client
     const { data, error } = await getSupabaseClient()
       .from('urls')
       .select('short_code')
       .eq('short_code', shortCode)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 means "No rows found"
-      console.error('Error checking for existing short code:', error);
+    if (error) {
+      // Log full error for debugging (will appear in browser console). Then surface a friendly message.
+      console.error('Supabase error checking for existing short code:', error);
       throw new Error('Could not verify short code uniqueness. Please try again.');
     }
 
+    // If no data returned, the short code is unique
     if (!data) {
       isCodeUnique = true;
     }
@@ -116,7 +119,8 @@ export const shortenUrl = async (longUrl: string): Promise<string> => {
     .insert({ long_url: longUrl, short_code: shortCode });
 
   if (insertError) {
-    console.error('Error saving URL to Supabase:', insertError);
+    // Log the raw error for debugging in the console, then show a friendly message
+    console.error('Supabase error inserting URL:', insertError);
     throw new Error('Could not save the URL. Please try again later.');
   }
 
