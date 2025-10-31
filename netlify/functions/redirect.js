@@ -25,7 +25,9 @@ exports.handler = async (event) => {
       return { statusCode: 500, body: 'Server misconfigured' };
     }
 
-    const endpoint = `${SUPABASE_URL}/rest/v1/urls?select=long_url&short_code=eq.${encodeURIComponent(code)}`;
+  // PostgREST expects string values to be quoted in the query (eq.'value').
+  const quoted = encodeURIComponent(`'${code}'`);
+  const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=eq.${quoted}`;
 
     const res = await fetch(endpoint, {
       headers: {

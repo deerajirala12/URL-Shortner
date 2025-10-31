@@ -30,7 +30,9 @@ exports.handler = async (event) => {
     }
 
     // Probe Supabase REST for the short code using service role key (server-side). We do NOT include any secret in the response.
-    const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=eq.${encodeURIComponent(code)}`;
+  // PostgREST expects string values to be quoted in the query (eq.'value').
+  const quoted = encodeURIComponent(`'${code}'`);
+  const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=eq.${quoted}`;
 
     const res = await fetch(endpoint, {
       method: 'GET',
