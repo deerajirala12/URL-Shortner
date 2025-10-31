@@ -1,12 +1,37 @@
-// @ts-nocheck - Supabase is loaded via CDN
-const { createClient } = supabase;
+// @ts-nocheck - Supabase is usually loaded via CDN in `index.html`.
+// This file reads Supabase credentials from Vite env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
+// We lazily initialise the Supabase client so that module import doesn't throw if the CDN
+// script hasn't executed yet or the global isn't present (this avoids a blank screen due
+// to an exception during module evaluation).
 
-const BASE_URL = 'https://short.ly';
-const SUPABASE_URL = "https://dszqmovpfyvcfclrgmit.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzenFtb3ZwZnl2Y2ZjbHJnbWl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3NjUzMjQsImV4cCI6MjA3NzM0MTMyNH0.ZemHQCOELgmnEcsQoekfRfiU_i_K_ywzZ6tN9-q3fHA";
+// Prefer runtime-configured values from Vite env. Keep the previous values as fallbacks.
+const BASE_URL = import.meta.env.VITE_BASE_URL ?? 'https://short.ly';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://dszqmovpfyvcfclrgmit.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzenFtb3ZwZnl2Y2ZjbHJnbWl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3NjUzMjQsImV4cCI6MjA3NzM0MTMyNH0.ZemHQCOELgmnEcsQoekfRfiU_i_K_ywzZ6tN9-q3fHA";
 
-// Create a single supabase client for interacting with your database
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  console.info('Using fallback Supabase credentials. To override, set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local');
+}
+
+let _supabaseClient: any = null;
+function getSupabaseClient() {
+  if (_supabaseClient) return _supabaseClient;
+
+  // Prefer the global created by the CDN script if available
+  const globalCreate = (typeof globalThis !== 'undefined' && (globalThis as any).supabase && (globalThis as any).supabase.createClient)
+    ? (globalThis as any).supabase.createClient
+    : null;
+
+  if (globalCreate) {
+    _supabaseClient = globalCreate(SUPABASE_URL, SUPABASE_ANON_KEY);
+    return _supabaseClient;
+  }
+
+  // If the global isn't available, try to provide a helpful error rather than throwing a cryptic TypeError
+  const msg = 'Supabase client not found. Ensure @supabase/supabase-js is loaded in index.html (CDN) or install it as a dependency.';
+  console.error(msg);
+  throw new Error(msg);
+}
 
 /**
  * NOTE: For this to work, you need to create a table in your Supabase project named `urls`
@@ -63,7 +88,7 @@ export const shortenUrl = async (longUrl: string): Promise<string> => {
   // Generate a unique short code, retrying if a collision occurs
   while (!isCodeUnique && attempts < maxAttempts) {
     shortCode = generateShortCode();
-    const { data, error } = await supabaseClient
+    const { data, error } = await getSupabaseClient()
       .from('urls')
       .select('short_code')
       .eq('short_code', shortCode)
@@ -86,7 +111,7 @@ export const shortenUrl = async (longUrl: string): Promise<string> => {
   }
 
   // Insert the new mapping into the database
-  const { error: insertError } = await supabaseClient
+  const { error: insertError } = await getSupabaseClient()
     .from('urls')
     .insert({ long_url: longUrl, short_code: shortCode });
 
