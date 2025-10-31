@@ -34,6 +34,25 @@ function getSupabaseClient() {
 }
 
 /**
+ * Resolve a short code to its long URL. Returns the long URL string or null if not found.
+ * Throws on network/auth errors.
+ */
+export async function resolveShortCode(shortCode: string): Promise<string | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('urls')
+    .select('long_url')
+    .eq('short_code', shortCode)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase error resolving short code:', error);
+    throw new Error('Could not resolve short code at this time.');
+  }
+
+  return data?.long_url ?? null;
+}
+
+/**
  * NOTE: For this to work, you need to create a table in your Supabase project named `urls`
  * with at least the following columns:
  * - `id` (int8, primary key, auto-incrementing)

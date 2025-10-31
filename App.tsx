@@ -1,6 +1,6 @@
 
-import React, { useState, useCallback } from 'react';
-import { shortenUrl } from './services/shortenerService';
+import React, { useState, useCallback, useEffect } from 'react';
+import { shortenUrl, resolveShortCode } from './services/shortenerService';
 import { UrlResult } from './components/UrlResult';
 import { Loader } from './components/Loader';
 import { LinkIcon } from './components/icons/LinkIcon';
@@ -10,6 +10,36 @@ const App: React.FC = () => {
   const [shortUrl, setShortUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // On first load, if the path contains a short code (e.g. /abc123), resolve it and redirect.
+  useEffect(() => {
+    const path = window.location.pathname.replace(/^\//, '');
+    if (!path) return; // root path, nothing to do
+
+    // Only treat reasonable short-code-like paths (alphanumeric, 4-12 chars) to avoid
+    // interfering with other routes
+    const isShortCode = /^[A-Za-z0-9_-]{4,12}$/.test(path);
+    if (!isShortCode) return;
+
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const long = await resolveShortCode(path);
+        if (long) {
+          // Use replace so navigation history doesn't create an extra step
+          window.location.replace(long);
+        } else {
+          setError('Short link not found.');
+        }
+      } catch (err) {
+        if (err instanceof Error) setError(err.message);
+        else setError('An unknown error occurred while resolving the short link.');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

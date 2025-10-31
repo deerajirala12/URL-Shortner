@@ -1,0 +1,10 @@
+[build]
+  publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  # Proxy any /:shortcode to the redirect function which will return a 301 to the long URL
+  from = "/:shortcode"
+  to = "/.netlify/functions/redirect?code=:shortcode"
+  status = 200
+  force = true
