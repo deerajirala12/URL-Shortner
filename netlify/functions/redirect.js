@@ -25,40 +25,57 @@ exports.handler = async (event) => {
       return { statusCode: 500, body: 'Server misconfigured' };
     }
 
-  // PostgREST expects string values to be quoted in the query (eq.'value').
-  const quoted = encodeURIComponent(`'${code}'`);
-  const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=eq.${quoted}`;
+  // Normalize code and escape single quotes for SQL literal safety
+  const normalized = String(code).trim().toLowerCase();
+  const escapeQuotes = (s) => String(s).replace(/'/g, "''");
+  const safeNormalized = escapeQuotes(normalized);
+  const safeOriginal = escapeQuotes(String(code));
 
-    const res = await fetch(endpoint, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
+  const quotedNormalized = encodeURIComponent(`'${safeNormalized}'`);
+  const quotedOriginal = encodeURIComponent(`'${safeOriginal}'`);
+  const base = SUPABASE_URL.replace(/\/$/, '');
+  const endpointNormalized = `${base}/rest/v1/urls?select=long_url&short_code=eq.${quotedNormalized}`;
+  const endpointOriginal = `${base}/rest/v1/urls?select=long_url&short_code=eq.${quotedOriginal}`;
 
-    // Verbose logging to help diagnose missing rows / permissions.
-    // This logs the called endpoint and response status (no secrets).
-    console.log('redirect: code=', code, 'endpoint=', endpoint, 'supabase_status=', res.status);
+  // Try normalized (lowercased, trimmed) exact match first
+  let res = await fetch(endpointNormalized, {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  console.log('redirect: try normalized code=', normalized, 'endpoint=', endpointNormalized, 'status=', res.status);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error('Supabase REST responded with error (normalized)', res.status, body);
+    return { statusCode: 502, body: 'Bad gateway' };
+  }
+  let data = await res.json();
+  console.log('redirect: normalized returned rows=', Array.isArray(data) ? data.length : 'unknown');
+  if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
+    console.log('redirect: resolved long_url (normalized)=', data[0].long_url);
+    return { statusCode: 301, headers: { Location: data[0].long_url } };
+  }
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error('Supabase REST responded with error', res.status, body);
-      return { statusCode: 502, body: 'Bad gateway' };
-    }
-
-    const data = await res.json();
-    console.log('redirect: returned rows=', Array.isArray(data) ? data.length : 'unknown');
-    if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
-      console.log('redirect: resolved long_url=', data[0].long_url);
-    }
-    if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
-      return {
-        statusCode: 301,
-        headers: {
-          Location: data[0].long_url,
-        },
-      };
-    }
+  // Try original exact match next
+  res = await fetch(endpointOriginal, {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  console.log('redirect: try original code=', code, 'endpoint=', endpointOriginal, 'status=', res.status);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error('Supabase REST responded with error (original)', res.status, body);
+    return { statusCode: 502, body: 'Bad gateway' };
+  }
+  data = await res.json();
+  console.log('redirect: original returned rows=', Array.isArray(data) ? data.length : 'unknown');
+  if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
+    console.log('redirect: resolved long_url (original)=', data[0].long_url);
+    return { statusCode: 301, headers: { Location: data[0].long_url } };
+  }
 
     // If no rows found, try a case-insensitive lookup (ilike) as a fallback. This helps when
     // short codes were stored with different casing or accidental normalization issues.
