@@ -60,6 +60,37 @@ exports.handler = async (event) => {
       };
     }
 
+    // If no rows found, try a case-insensitive lookup (ilike) as a fallback. This helps when
+    // short codes were stored with different casing or accidental normalization issues.
+    try {
+      const ilikeQuoted = encodeURIComponent(`'${code}'`);
+      const ilikeEndpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=ilike.${ilikeQuoted}`;
+      console.log('redirect: trying ilike fallback endpoint=', ilikeEndpoint);
+      const res2 = await fetch(ilikeEndpoint, {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      });
+      console.log('redirect: ilike supabase_status=', res2.status);
+      if (res2.ok) {
+        const d2 = await res2.json();
+        console.log('redirect: ilike returned rows=', Array.isArray(d2) ? d2.length : 'unknown');
+        if (Array.isArray(d2) && d2.length > 0 && d2[0].long_url) {
+          console.log('redirect: ilike resolved long_url=', d2[0].long_url);
+          return {
+            statusCode: 301,
+            headers: { Location: d2[0].long_url },
+          };
+        }
+      } else {
+        const body2 = await res2.text().catch(() => '');
+        console.error('redirect: ilike supabase error', res2.status, body2);
+      }
+    } catch (e) {
+      console.error('redirect: ilike fallback error', e);
+    }
+
     return { statusCode: 404, body: 'Not found' };
   } catch (err) {
     console.error(err);
