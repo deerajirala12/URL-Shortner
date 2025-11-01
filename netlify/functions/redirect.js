@@ -36,6 +36,10 @@ exports.handler = async (event) => {
       },
     });
 
+    // Verbose logging to help diagnose missing rows / permissions.
+    // This logs the called endpoint and response status (no secrets).
+    console.log('redirect: code=', code, 'endpoint=', endpoint, 'supabase_status=', res.status);
+
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       console.error('Supabase REST responded with error', res.status, body);
@@ -43,6 +47,10 @@ exports.handler = async (event) => {
     }
 
     const data = await res.json();
+    console.log('redirect: returned rows=', Array.isArray(data) ? data.length : 'unknown');
+    if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
+      console.log('redirect: resolved long_url=', data[0].long_url);
+    }
     if (Array.isArray(data) && data.length > 0 && data[0].long_url) {
       return {
         statusCode: 301,
