@@ -30,36 +30,58 @@ exports.handler = async (event) => {
     }
 
     // Probe Supabase REST for the short code using service role key (server-side). We do NOT include any secret in the response.
-  // PostgREST expects string values to be quoted in the query (eq.'value').
-  const quoted = encodeURIComponent(`'${code}'`);
-  const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/urls?select=long_url&short_code=eq.${quoted}`;
+    // Normalize the incoming code (trim + lowercase) to improve matching, and escape single quotes for PostgREST queries.
+    const raw = String(code || '');
+    const normalized = raw.trim().toLowerCase();
 
-    const res = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
+    const escapeForPg = (s) => String(s).replace(/'/g, "''");
+    const makeQuoted = (s) => encodeURIComponent(`'${s}'`);
 
-    const status = res.status;
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const normalizedQuoted = makeQuoted(escapeForPg(normalized));
+    const originalQuoted = makeQuoted(escapeForPg(raw));
 
-    // Only parse body when small; but never return long_url contents. We'll report if a row exists.
-    let found = false;
-    if (res.ok) {
+    const endpointNormalized = `${base}/rest/v1/urls?select=long_url&short_code=eq.${normalizedQuoted}`;
+    const endpointOriginal = `${base}/rest/v1/urls?select=long_url&short_code=eq.${originalQuoted}`;
+
+    // Helper to probe an endpoint and return { status, found }
+    const probeEndpoint = async (endpoint) => {
       try {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].long_url) {
-          found = true;
+        const r = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        });
+        const status = r.status;
+        let found = false;
+        if (r.ok) {
+          try {
+            const data = await r.json();
+            if (Array.isArray(data) && data.length > 0 && data[0] && data[0].long_url) {
+              found = true;
+            }
+          } catch (e) {
+            // ignore parse errors
+          }
         }
-      } catch (e) {
-        // ignore parse errors
+        return { status, found };
+      } catch (err) {
+        return { status: 0, found: false };
       }
+    };
+
+    // Try normalized first, then original. We intentionally do not return long_url or any secret data.
+    const normalizedProbe = await probeEndpoint(endpointNormalized);
+    let originalProbe = { status: 0, found: false };
+    if (!normalizedProbe.found) {
+      originalProbe = await probeEndpoint(endpointOriginal);
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ ok: true, envs, probe: { status, found } }, null, 2),
+      body: JSON.stringify({ ok: true, envs, probe: { code: raw, normalized: normalizedProbe, original: originalProbe } }, null, 2),
     };
   } catch (err) {
     console.error('Debug function error', err);
